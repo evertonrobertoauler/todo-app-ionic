@@ -1,3 +1,5 @@
+/* global angular */
+/* global PouchDB */
 // Ionic Starter App
 
 // angular.module is a global place for creating, registering and retrieving Angular modules
@@ -17,16 +19,54 @@ angular.module('starter', ['ionic'])
       }
     });
   })
-  .controller('TodoCtrl', function ($scope) {
-    $scope.todos = [];
+  .factory('Todos', function () {
+    var db = new PouchDB('todos', {auto_compaction: true});
+
+    db.changes({
+      since: 'now',
+      live: true,
+      include_docs: true
+    }).on('change', function (change) {
+      console.log('Changes', change);
+    });
+
+    db.replicate.to('http://localhost:3000/todos', {
+      live: true,
+      retry: true,
+      back_off_function: function (delay) {
+        if (delay === 0) {
+          return 1000;
+        }
+        return delay * 3;
+      }
+    });
+
+    return db;
+  })
+  .controller('TodoCtrl', function ($scope, Todos) {
+
+    obterTodosAtualizados();
+
     $scope.todo = '';
 
     $scope.adicionarTodo = function () {
-      $scope.todos.push($scope.todo);
+      var todo = {todo: $scope.todo};
       $scope.todo = '';
+      return Todos.post(todo).then(obterTodosAtualizados);
+    }
+
+    $scope.removerTodo = function (doc) {
+      return Todos.remove(doc).then(obterTodosAtualizados);
     }
     
-    $scope.removerTodo = function ($index) {
-      $scope.todos.splice($index, 1);
+    function obterTodosAtualizados() {
+      return Todos.allDocs({ include_docs: true }).then(function (todos) {
+        $scope.$applyAsync(function () {
+          console.log(todos);
+          $scope.todos = todos.rows.map(function (linha) {
+            return linha.doc;
+          });
+        });
+      });
     }
   });
